@@ -1,0 +1,96 @@
+#define MIC_LEFT A0
+#define MIC_CENTER A1
+#define MIC_RIGHT A2
+#define VIB_LEFT 9
+#define VIB_CENTER 8
+#define VIB_RIGHT 7
+
+const int samplingCount = 100;
+int noiseLevel = 500;  // Initial ambient noise level
+int dynamicThreshold = 500;  // Start with fixed threshold
+
+const int hornDbLevel = 90;
+const int micToAnalogFactor = 6;
+const int thresholdBuffer = 10;
+
+unsigned long lastCalibrationTime = 0;
+const unsigned long calibrationInterval = 15000;  // 1 minute
+
+void setup() {
+    pinMode(MIC_LEFT, INPUT);
+    pinMode(MIC_CENTER, INPUT);
+    pinMode(MIC_RIGHT, INPUT);
+    pinMode(VIB_LEFT, OUTPUT);
+    pinMode(VIB_CENTER, OUTPUT);
+    pinMode(VIB_RIGHT, OUTPUT);
+    Serial.begin(9600);
+
+    Serial.print("Initial Threshold: ");
+    Serial.println(dynamicThreshold);
+}
+
+void loop() {
+    unsigned long currentTime = millis();
+
+    // Recalibrate only every 1 minute
+    if (currentTime - lastCalibrationTime >= calibrationInterval) {
+        calibrateNoiseLevel();
+        lastCalibrationTime = currentTime;
+    }
+
+    int leftSound = analogRead(MIC_LEFT);
+    int centerSound = analogRead(MIC_CENTER);
+    int rightSound = analogRead(MIC_RIGHT);
+
+    Serial.print("Left: "); Serial.print(leftSound);
+    Serial.print(" | Center: "); Serial.print(centerSound);
+    Serial.print(" | Right: "); Serial.print(rightSound);
+    Serial.print(" | Threshold: "); Serial.println(dynamicThreshold);
+
+    if (leftSound > dynamicThreshold || centerSound > dynamicThreshold || rightSound > dynamicThreshold) {
+        if (leftSound > centerSound && leftSound > rightSound) {
+            activateVibrator(VIB_LEFT);
+        } else if (rightSound > centerSound && rightSound > leftSound) {
+            activateVibrator(VIB_RIGHT);
+        } else {
+            activateVibrator(VIB_CENTER);
+        }
+    } else {
+        deactivateAllVibrators();
+    }
+
+    delay(100);
+}
+
+void activateVibrator(int vibratorPin) {
+    digitalWrite(vibratorPin, HIGH);
+    delay(500);
+    digitalWrite(vibratorPin, LOW);
+}
+
+void deactivateAllVibrators() {
+    digitalWrite(VIB_LEFT, LOW);
+    digitalWrite(VIB_CENTER, LOW);
+    digitalWrite(VIB_RIGHT, LOW);
+}
+
+void calibrateNoiseLevel() {
+    int total = 0;
+    for (int i = 0; i < samplingCount; i++) {
+        int reading = (analogRead(MIC_LEFT) + analogRead(MIC_CENTER) + analogRead(MIC_RIGHT)) / 3;
+        total += reading;
+        delay(10);
+    }
+    noiseLevel = total / samplingCount;
+
+    if (noiseLevel > 500) {
+        dynamicThreshold = noiseLevel + (hornDbLevel * micToAnalogFactor) / 10 + thresholdBuffer;
+    } else {
+        dynamicThreshold = 500;  // Keep it at 550
+    }
+
+    Serial.print("Calibrated Noise Level: ");
+    Serial.println(noiseLevel);
+    Serial.print("Updated Threshold: ");
+    Serial.println(dynamicThreshold);
+}
